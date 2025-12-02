@@ -21,6 +21,12 @@ class Network:
         self.noise = BW_Hz / 4e21  # thermal noise in Watts
         self.noise_dBm = watt_to_dBm(self.noise) # thermal noise in dBm
 
+        # Handover related data        
+        self.HO_counters = {}  # key = ms, value = counter for TTT
+        self.HO_targets = {}  # key = ms, value = target bs for handover
+        for ms in self.mobile_stations:
+            self.HO_targets[ms] = None
+
 
     def update_distances(self):        
         for ms in self.mobile_stations:
@@ -61,6 +67,7 @@ class Network:
             self.connections.update({ms: selected_BS})
         return
     
+
     def update_SINR_downlink(self):
         for ms in self.mobile_stations:
             bs_connected = self.connections[ms]
@@ -77,6 +84,58 @@ class Network:
             
         return self.SINR_downlink
     
+
+    def check_handovers(self, delta_H, TTT, Step):
+        num_handovers = 0
+
+        # Check handover for every mobile station
+        for ms in self.mobile_stations:              
+            # Find which BS has MS strongest signal from
+            RSS_max = float("-inf")
+            BS_best = None
+            for bs in self.base_stations:
+                RSS_current = self.RSS_downlink[(ms, bs)]
+                if RSS_current > RSS_max:
+                    RSS_max = RSS_current
+                    BS_best = bs # BS with highest RSS (candidate or current)
+            
+            bs_connected = self.connections[ms]
+            if BS_best is bs_connected:
+                # No handover needed, reset any ongoing handover data
+                self.HO_counters[ms] = 0
+                self.HO_targets[ms] = None
+                continue           
+            
+
+            # BS_best is not bs_connected            
+            RSS_connected = self.RSS_downlink[(ms, bs_connected)]
+            if (RSS_max - RSS_connected) >= delta_H:
+                if BS_best is self.HO_targets[ms]: # BS_best wins once again
+                    self.HO_counters[ms] += Step
+                else: # we've got new candidate
+                    self.HO_targets[ms] = BS_best
+                    self.HO_counters[ms] = 0
+            else: # there's better BS, but not good enough -> connected BS takes over
+                # No handover needed, reset any ongoing handover data
+                self.HO_counters[ms] = 0
+                self.HO_targets[ms] = None
+                continue
+
+            if self.HO_counters[ms] >= TTT:
+                # Perform handover
+                self.perform_handover(ms, self.HO_targets[ms])
+                num_handovers += 1
+                # Reset ongoing handover data
+                self.HO_counters[ms] = 0
+                self.HO_targets[ms] = None
+        
+        return num_handovers  
+    
+    def perform_handover(self, ms, target_bs):        
+        self.connections[ms] = target_bs
+        # Data like distances, PL etc. became invalid for this MS.
+        # However it doesn't matter as they will be recalculated in the next simulation iteration.
+    
     def find_flying_bs_for_ms(self, fbs_number, fbs_height):
         # Prepare data for clustering
         ms_positions = np.array([[ms.x, ms.y] for ms in self.mobile_stations])
@@ -92,7 +151,6 @@ class Network:
 
         self.base_stations = flying_BS_list  # Update network's base stations to flying BSs
         return flying_BS_list
-
 
     
     def print_to_file(self, file, PL = True, RSS = True, SNR = True, CONN = True, SINR = True):        

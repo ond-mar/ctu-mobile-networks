@@ -5,3 +5,9 @@ class MobileStation(NetworkNode):
         super().__init__(x, y, power, name)
         self.z = z
         self.name = name
+
+    def move_to_pos(self, x, y, z = None):
+        self.x = x
+        self.y = y
+        if z is not None:
+            self.z = z
