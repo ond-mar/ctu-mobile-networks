@@ -3,13 +3,14 @@ import numpy as np
 
 from mobile_station import MobileStation
 from base_station import BaseStation
-from helper import node_distance, path_loss, watt_to_dBm, dBm_to_watt
+from helper import node_distance, path_loss, watt_to_dBm, dBm_to_watt, efficiency_5G, db_to_linear
 
 class Network:
     def __init__(self, base_stations = None, mobile_stations = None, carrier_frequency_GHz = 1, BW_Hz = 1e6):
         self.base_stations = base_stations if base_stations is not None else []
         self.mobile_stations = mobile_stations if mobile_stations is not None else []
         self.carrier_frequency_GHz = carrier_frequency_GHz
+        self.BW_Hz = BW_Hz
 
         self.distances = {}
         self.path_losses = {}
@@ -17,6 +18,9 @@ class Network:
         self.SNR_downlink = {}      
         self.connections = {} # key = ms, value = bs
         self.SINR_downlink = {} # key = ms, value = SINR from connected bs
+
+        self.BW = {} # key = ms, value = BW
+        self.REs_per_ms = {} # key = ms, value = REs/s
 
         self.noise = BW_Hz / 4e21  # thermal noise in Watts
         self.noise_dBm = watt_to_dBm(self.noise) # thermal noise in dBm
@@ -26,6 +30,10 @@ class Network:
         self.HO_targets = {}  # key = ms, value = target bs for handover
         for ms in self.mobile_stations:
             self.HO_targets[ms] = None
+
+        # Capacity related data
+        self.signaling_overhead = 0.25  # amount of signaling overhead (25%)
+        self.total_REs = 7*12*100*20*275*(1-self.signaling_overhead)  # total amount of REs/s available for data transmission (i.e., exluding overhead)
 
 
     def update_distances(self):        
@@ -83,6 +91,103 @@ class Network:
             self.SINR_downlink[ms] = SINR
             
         return self.SINR_downlink
+    
+    def assign_BW_random(self):
+        for bs in self.base_stations:
+            coefficients = []
+            connected_ms = []
+
+            for ms in self.mobile_stations:
+                if self.connections[ms] == bs:
+                    coefficients.append(np.random.rand())
+                    connected_ms.append(ms)
+
+            coeff_sum = np.sum(coefficients)
+            BWs = (self.BW_Hz / coeff_sum) * np.array(coefficients)
+
+            for i, ms in enumerate(connected_ms):
+                self.BW[ms] = BWs[i]   
+
+    def assign_BW_fair(self):
+        for bs in self.base_stations:
+            connected_ms = []
+            SINR_list = []
+
+            for ms in self.mobile_stations:
+                if self.connections[ms] == bs:
+                    SINR_list.append(self.SINR_downlink[ms] + 10)  # shift to avoid zero SINR
+                    connected_ms.append(ms)
+
+            SINR_sum = np.sum(SINR_list)
+            BWs = (self.BW_Hz / SINR_sum) * np.array(SINR_list) 
+
+            for i, ms in enumerate(connected_ms):
+                self.BW[ms] = BWs[i]
+                # self.BW[ms] = self.BW_Hz / len(connected_ms)  # equal BW for all connected MSs
+
+    def assign_REs_random(self):
+        for bs in self.base_stations:
+            coefficients = []
+            connected_ms = []
+
+            for ms in self.mobile_stations:
+                if self.connections[ms] == bs:
+                    coefficients.append(np.random.rand())
+                    connected_ms.append(ms)
+
+            coeff_sum = np.sum(coefficients)
+            REs_list = (self.total_REs / coeff_sum) * np.array(coefficients)
+
+            for i, ms in enumerate(connected_ms):
+                self.REs_per_ms[ms] = REs_list[i]
+
+    def assign_REs_fair(self):
+        for bs in self.base_stations:
+            connected_ms = []
+            SINR_list = []
+
+            for ms in self.mobile_stations:
+                if self.connections[ms] == bs:
+                    SINR_list.append(self.SINR_downlink[ms] + 10)  # shift to avoid zero SINR
+                    connected_ms.append(ms)            
+
+            SINR_sum = np.sum(SINR_list)
+            REs_list = (self.total_REs / SINR_sum) * np.array(SINR_list) 
+
+            for i, ms in enumerate(connected_ms):
+                self.REs_per_ms[ms] = REs_list[i]
+
+    def assign_REs_equal(self):
+        for bs in self.base_stations:
+            connected_ms = []
+
+            for ms in self.mobile_stations:
+                if self.connections[ms] == bs:
+                    connected_ms.append(ms)            
+
+            REs_per_ms = self.total_REs / len(connected_ms) if len(connected_ms) > 0 else 0
+
+            for ms in connected_ms:
+                self.REs_per_ms[ms] = REs_per_ms
+
+    def total_capacity_shannon(self):
+        capacity = 0
+        for ms in self.mobile_stations:
+            BW_ms = self.BW[ms]
+            SINR_ms_dB = self.SINR_downlink[ms]            
+            SINR_ms_W = db_to_linear(SINR_ms_dB)
+            capacity += BW_ms * np.log2(1 + SINR_ms_W)
+
+        return capacity  # in bps
+    
+    def total_capacity_5G(self):
+        capacity = 0
+        for ms in self.mobile_stations:
+            REs_ms = self.REs_per_ms[ms]
+            efficiency = efficiency_5G(self.SINR_downlink[ms])  # in bits/RE
+            capacity += REs_ms * efficiency
+
+        return capacity  # in bps
     
 
     def check_handovers(self, delta_H, TTT, Step):

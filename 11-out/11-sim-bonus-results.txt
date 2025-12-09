@@ -1,0 +1,11 @@
+Capacities with Base Stations only:
+Random BW allocation - Shannon: 820.40 Mbps
+Fair BW allocation - Shannon: 977.18 Mbps
+Random RE allocation - 5G: 409.57 Mbps
+Fair RE allocation - 5G: 518.98 Mbps
+
+Capacities with Flying Base Station:
+Random BW allocation - Shannon: 907.57 Mbps
+Fair BW allocation - Shannon: 1061.37 Mbps
+Random RE allocation - 5G: 446.34 Mbps
+Fair RE allocation - 5G: 559.46 Mbps
