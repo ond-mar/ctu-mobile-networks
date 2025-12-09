@@ -103,14 +103,14 @@ out_folder = "11-out/"
 os.makedirs(out_folder, exist_ok=True) # create folder if it does not exist
 out_file = out_folder + "11-sim-bonus-results.txt"
 with open(out_file, "w") as f:
-    f.write("Capacities with Base Stations only:\n")
-    f.write(f"Random BW allocation - Shannon: {cap_rand_shannon_BS/1e6:.2f} Mbps\n")
-    f.write(f"Fair BW allocation - Shannon: {cap_fair_shannon_BS/1e6:.2f} Mbps\n")
-    f.write(f"Random RE allocation - 5G: {cap_rand_5G_BS/1e6:.2f} Mbps\n")
-    f.write(f"Fair RE allocation - 5G: {cap_fair_5G_BS/1e6:.2f} Mbps\n\n")
+    f.write("Capacities with static Base Stations:\n")
+    f.write(f"Random BW allocation - Shannon:\t {cap_rand_shannon_BS/1e6:.2f} Mbps\n")
+    f.write(f"Fair BW allocation - Shannon:\t {cap_fair_shannon_BS/1e6:.2f} Mbps\n")
+    f.write(f"Random RE allocation - 5G:\t {cap_rand_5G_BS/1e6:.2f} Mbps\n")
+    f.write(f"Fair RE allocation - 5G:\t {cap_fair_5G_BS/1e6:.2f} Mbps\n\n")
 
     f.write("Capacities with Flying Base Station:\n")
-    f.write(f"Random BW allocation - Shannon: {cap_rand_shannon_FBS/1e6:.2f} Mbps\n")
-    f.write(f"Fair BW allocation - Shannon: {cap_fair_shannon_FBS/1e6:.2f} Mbps\n")
-    f.write(f"Random RE allocation - 5G: {cap_rand_5G_FBS/1e6:.2f} Mbps\n")
-    f.write(f"Fair RE allocation - 5G: {cap_fair_5G_FBS/1e6:.2f} Mbps\n")
+    f.write(f"Random BW allocation - Shannon:\t {cap_rand_shannon_FBS/1e6:.2f} Mbps\n")
+    f.write(f"Fair BW allocation - Shannon:\t {cap_fair_shannon_FBS/1e6:.2f} Mbps\n")
+    f.write(f"Random RE allocation - 5G:\t {cap_rand_5G_FBS/1e6:.2f} Mbps\n")
+    f.write(f"Fair RE allocation - 5G:\t {cap_fair_5G_FBS/1e6:.2f} Mbps\n")

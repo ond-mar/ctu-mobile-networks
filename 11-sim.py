@@ -85,6 +85,10 @@ capacities_equal_5G = np.zeros(sim_steps)
 network.assign_REs_equal()
 capacities_equal_5G[0] = network.total_capacity_5G()
 
+capacities_same_5G = np.zeros(sim_steps)
+# network.assign_REs_same_capacity()
+capacities_same_5G[0] = network.total_capacity_same_capacity_5G()
+
 # Iterate through different positions
 num_handovers = 0
 for i in range(sim_steps):
@@ -123,6 +127,10 @@ for i in range(sim_steps):
     network.assign_REs_equal()
     capacities_equal_5G[i] = network.total_capacity_5G()
 
+    # network.assign_REs_same_capacity()
+    capacities_same_5G[i] = network.total_capacity_same_capacity_5G()
+
+
 
 # DISPLAY RESULTS #
 out_folder = "11-out/"
@@ -143,10 +151,21 @@ fig.savefig(out_folder + "11-sim-channel.png", dpi=300)
 fig2, ax2 = plt.subplots(figsize=(8,6))
 ax2.plot(range(sim_steps), capacities_equal_5G * 1e-6, label=f"Equal REs, 5G", linewidth=0.8)
 ax2.plot(range(sim_steps), capacities_fair_5G * 1e-6, label=f"Fair REs, 5G", linewidth=0.8)
-ax2.plot(range(sim_steps), capacities_rand_5G * 1e-6, label=f"Random REs, 5G", linewidth=0.8)
+ax2.plot(range(sim_steps), capacities_rand_5G * 1e-6, linestyle="dotted", label=f"Random REs, 5G", linewidth=0.8)
 
 ax2.set_xlabel("Simulation time [step]")
 ax2.set_ylabel("Channel capacity [Mbps]")
 ax2.legend()
 ax2.grid(visible=True, alpha=0.5)
 fig2.savefig(out_folder + "11-sim-channel-bonus.png", dpi=300)
+
+fig3, ax3 = plt.subplots(figsize=(8,6))
+ax3.plot(range(sim_steps), capacities_same_5G * 1e-6, label=f"Same capacity REs, 5G", linewidth=0.8)
+ax3.plot(range(sim_steps), capacities_fair_5G * 1e-6, label=f"Fair REs, 5G", linewidth=0.8)
+ax3.plot(range(sim_steps), capacities_rand_5G * 1e-6, label=f"Random REs, 5G", linewidth=0.8)
+
+ax3.set_xlabel("Simulation time [step]")
+ax3.set_ylabel("Channel capacity [Mbps]")
+ax3.legend()
+ax3.grid(visible=True, alpha=0.5)
+fig3.savefig(out_folder + "11-sim-channel-bonus2.png", dpi=300)

@@ -122,8 +122,7 @@ class Network:
             BWs = (self.BW_Hz / SINR_sum) * np.array(SINR_list) 
 
             for i, ms in enumerate(connected_ms):
-                self.BW[ms] = BWs[i]
-                # self.BW[ms] = self.BW_Hz / len(connected_ms)  # equal BW for all connected MSs
+                self.BW[ms] = BWs[i]                
 
     def assign_REs_random(self):
         for bs in self.base_stations:
@@ -149,7 +148,7 @@ class Network:
             for ms in self.mobile_stations:
                 if self.connections[ms] == bs:
                     SINR_list.append(self.SINR_downlink[ms] + 10)  # shift to avoid zero SINR
-                    connected_ms.append(ms)            
+                    connected_ms.append(ms)         
 
             SINR_sum = np.sum(SINR_list)
             REs_list = (self.total_REs / SINR_sum) * np.array(SINR_list) 
@@ -169,6 +168,29 @@ class Network:
 
             for ms in connected_ms:
                 self.REs_per_ms[ms] = REs_per_ms
+
+    def total_capacity_same_capacity_5G(self):
+        capacity = 0
+        
+        for bs in self.base_stations:
+            connected_ms = []
+            efficiency_list = []
+
+            for ms in self.mobile_stations:
+                if self.connections[ms] == bs:
+                    efficiency = efficiency_5G(self.SINR_downlink[ms])  # in bits/RE
+                    if efficiency == 0: # no transmission possible
+                        continue
+
+                    efficiency_list.append(1/efficiency)
+                    connected_ms.append(ms)
+
+            efficiency_sum = np.sum(efficiency_list)
+
+            capacity_per_ms = (self.total_REs / efficiency_sum) # / len(connected_ms)            
+            capacity += capacity_per_ms * len(connected_ms)
+
+        return capacity # in bps
 
     def total_capacity_shannon(self):
         capacity = 0
@@ -256,7 +278,6 @@ class Network:
 
         self.base_stations = flying_BS_list  # Update network's base stations to flying BSs
         return flying_BS_list
-
     
     def print_to_file(self, file, PL = True, RSS = True, SNR = True, CONN = True, SINR = True):        
         if PL:
