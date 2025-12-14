@@ -6,6 +6,12 @@ class MobileStation(NetworkNode):
         self.z = z
         self.name = name
 
+    def __str__(self):
+        return self.name
+    
+    def __repr__(self):
+        return self.name
+
     def move_to_pos(self, x, y, z = None):
         self.x = x
         self.y = y

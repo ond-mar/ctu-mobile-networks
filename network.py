@@ -6,23 +6,34 @@ from base_station import BaseStation
 from helper import node_distance, path_loss, watt_to_dBm, dBm_to_watt, efficiency_5G, db_to_linear
 
 class Network:
-    def __init__(self, base_stations = None, mobile_stations = None, carrier_frequency_GHz = 1, BW_Hz = 1e6):
+    def __init__(self, base_stations = None, mobile_stations = None, carrier_frequency_GHz = 1, BW_Hz = 0, BW_per_ms = 0, d2d = False):
         self.base_stations = base_stations if base_stations is not None else []
         self.mobile_stations = mobile_stations if mobile_stations is not None else []
         self.carrier_frequency_GHz = carrier_frequency_GHz
-        self.BW_Hz = BW_Hz
+
+        assert BW_Hz == 0 or BW_per_ms == 0, "Specify either total BW or BW per MS, not both."
+        if BW_Hz == 0:
+            self.BW_Hz = BW_per_ms * len(self.mobile_stations)
+            self.BW_per_ms = BW_per_ms
+        else:
+            self.BW_per_ms = BW_Hz / len(self.mobile_stations)
+            self.BW_Hz = BW_Hz
 
         self.distances = {}
         self.path_losses = {}
         self.RSS_downlink = {}
         self.SNR_downlink = {}      
+        self.RSS_uplink = {}
+        self.SNR_uplink = {} 
+        self.SNR_D2D = {}
+        self.RSS_D2D = {}
         self.connections = {} # key = ms, value = bs
         self.SINR_downlink = {} # key = ms, value = SINR from connected bs
 
         self.BW = {} # key = ms, value = BW
         self.REs_per_ms = {} # key = ms, value = REs/s
 
-        self.noise = BW_Hz / 4e21  # thermal noise in Watts
+        self.noise = self.BW_Hz / 4e21  # thermal noise in Watts
         self.noise_dBm = watt_to_dBm(self.noise) # thermal noise in dBm
 
         # Handover related data        
@@ -31,9 +42,21 @@ class Network:
         for ms in self.mobile_stations:
             self.HO_targets[ms] = None
 
-        # Capacity related data
+        # 5G capacity related data
         self.signaling_overhead = 0.25  # amount of signaling overhead (25%)
         self.total_REs = 7*12*100*20*275*(1-self.signaling_overhead)  # total amount of REs/s available for data transmission (i.e., exluding overhead)
+        self.REs_per_ms = self.total_REs / (2* len(self.mobile_stations))
+
+        self.d2d = d2d
+        if d2d:
+            self.d2d_links = []  # list of tuples (ms1, ms2) representing D2D links
+            for i in range(len(self.mobile_stations)//2):
+                self.d2d_links.append((self.mobile_stations[i], self.mobile_stations[i+len(self.mobile_stations)//2]))
+
+            self.d2d_distances = {}
+            self.d2d_path_losses = {}
+
+            
 
 
     def update_distances(self):        
@@ -42,12 +65,23 @@ class Network:
                 self.distances[(ms, bs)] = node_distance(ms, bs)
         return self.distances
     
+    def update_D2D_distances(self):
+        for (ms1, ms2) in self.d2d_links:
+            self.d2d_distances[(ms1, ms2)] = node_distance(ms1, ms2)
+        return self.distances
+    
     def update_path_losses(self):
         for ms in self.mobile_stations:
             for bs in self.base_stations:
                 self.path_losses[(ms, bs)] = path_loss(self.distances[(ms, bs)], self.carrier_frequency_GHz)
 
         return self.path_losses
+    
+    def update_D2D_path_losses(self):
+        for (ms1, ms2) in self.d2d_links:
+            self.d2d_path_losses[(ms1, ms2)] = path_loss(self.d2d_distances[(ms1, ms2)], self.carrier_frequency_GHz)
+
+        return self.d2d_path_losses
 
     def update_SNR_downlink(self):
         for ms in self.mobile_stations:
@@ -62,6 +96,32 @@ class Network:
                 self.RSS_downlink[(ms, bs)] = bs.power - self.path_losses[(ms, bs)]
                 
         return self.RSS_downlink
+    
+    def update_SNR_uplink(self):
+        for ms in self.mobile_stations:
+            for bs in self.base_stations:                
+                self.SNR_uplink[(ms, bs)] = ms.power - self.path_losses[(ms, bs)] - self.noise_dBm
+
+        return self.SNR_uplink
+    
+    def update_RSS_uplink(self):        
+        for ms in self.mobile_stations:
+            for bs in self.base_stations:                
+                self.RSS_uplink[(ms, bs)] = ms.power - self.path_losses[(ms, bs)]
+                
+        return self.RSS_uplink
+    
+    def update_SNR_D2D(self):
+        for (ms1, ms2) in self.d2d_links:                
+            self.SNR_D2D[(ms1, ms2)] = ms1.power - self.d2d_path_losses[(ms1, ms2)] - self.noise_dBm
+
+        return self.SNR_D2D
+    
+    def update_RSS_D2D(self):        
+        for (ms1, ms2) in self.d2d_links:                
+            self.RSS_D2D[(ms1, ms2)] = ms1.power - self.d2d_path_losses[(ms1, ms2)]
+                
+        return self.RSS_D2D
     
     def connect_ms_to_bs(self):
         for ms in self.mobile_stations:
@@ -211,6 +271,57 @@ class Network:
 
         return capacity  # in bps
     
+    def capacity_D2D_shannon(self):
+        capacity_cell = 0
+        capacity_mode_select = 0
+        for i in range(len(self.mobile_stations)//2):
+            # Uplink
+            ms_uplink = self.mobile_stations[i]
+            SNR_W = db_to_linear(self.SNR_uplink[(ms_uplink, self.connections[ms_uplink])])            
+            cap_uplink = (self.BW_per_ms / 2) * np.log2(1 + SNR_W)
+
+            # Downlink
+            ms_downlink = self.mobile_stations[i + len(self.mobile_stations)//2]
+            SNR_W = db_to_linear(self.SNR_downlink[(ms_downlink, self.connections[ms_downlink])])
+            cap_downlink = (self.BW_per_ms / 2) * np.log2(1 + SNR_W)
+
+            cap_cell = min(cap_uplink, cap_downlink) # bottleneck
+
+            # D2D
+            SNR_W = db_to_linear(self.SNR_D2D[(ms_uplink, ms_downlink)])
+            cap_D2D = self.BW_per_ms * np.log2(1 + SNR_W)
+
+            capacity_cell += cap_cell
+            capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode            
+
+        return (capacity_cell, capacity_mode_select)  # in bps
+    
+    def capacity_D2D_5G(self):
+        capacity_cell = 0
+        capacity_mode_select = 0
+        for i in range(len(self.mobile_stations)//2):
+            # Uplink
+            ms_uplink = self.mobile_stations[i]
+            efficiency_uplink = efficiency_5G(self.SNR_uplink[(ms_uplink, self.connections[ms_uplink])])  # in bits/RE
+            cap_uplink = (self.REs_per_ms / 2) * efficiency_uplink
+
+            # Downlink
+            ms_downlink = self.mobile_stations[i + len(self.mobile_stations)//2]
+            efficiency_downlink = efficiency_5G(self.SNR_downlink[(ms_downlink, self.connections[ms_downlink])])  # in bits/RE
+            cap_downlink = (self.REs_per_ms / 2) * efficiency_downlink
+
+            cap_cell = min(cap_uplink, cap_downlink) # bottleneck
+
+            # D2D
+            efficiency_D2D = efficiency_5G(self.SNR_D2D[(ms_uplink, ms_downlink)])  # in bits/RE
+            cap_D2D = self.REs_per_ms * efficiency_D2D
+
+            capacity_cell += cap_cell
+            capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode           
+
+        return (capacity_cell, capacity_mode_select)  # in bps
+    
+    
 
     def check_handovers(self, delta_H, TTT, Step):
         num_handovers = 0
@@ -279,7 +390,7 @@ class Network:
         self.base_stations = flying_BS_list  # Update network's base stations to flying BSs
         return flying_BS_list
     
-    def print_to_file(self, file, PL = True, RSS = True, SNR = True, CONN = True, SINR = True):        
+    def print_to_file(self, file, PL = False, RSS_downlink = False, RSS_uplink = False, SNR_downlink = False, SNR_uplink = False, CONN = False, SINR = False, D2D = False):        
         if PL:
             file.write("PATH LOSSES\n")
             file.write("MS name \tPL BS1  \tPL BS2  \tPL BS3  \tPL BS4\n")
@@ -289,7 +400,7 @@ class Network:
                     file.write(f"{self.path_losses[(ms, bs)]:.2f}\t \t")
                 file.write("\n")
             file.write("--------------------------------\n\n")
-        if RSS:
+        if RSS_downlink:
             file.write("RSS DOWNLINK\n")
             file.write("MS name \tRSS BS1  \tRSS BS2  \tRSS BS3  \tRSS BS4\n")
             for ms in self.mobile_stations:
@@ -298,13 +409,31 @@ class Network:
                     file.write(f"{self.RSS_downlink[(ms, bs)]:.2f}\t \t")
                 file.write("\n")
             file.write("--------------------------------\n\n")
-        if SNR:
+        if RSS_uplink:
+            file.write("RSS UPLINK\n")
+            file.write("MS name \tRSS BS1  \tRSS BS2  \tRSS BS3  \tRSS BS4\n")
+            for ms in self.mobile_stations:
+                file.write(f"{ms.name} \t \t")
+                for bs in self.base_stations:
+                    file.write(f"{self.RSS_uplink[(ms, bs)]:.2f}\t \t")
+                file.write("\n")
+            file.write("--------------------------------\n\n")        
+        if SNR_downlink:
             file.write("SNR DOWNLINK\n")
             file.write("MS name \tSNR BS1  \tSNR BS2  \tSNR BS3  \tSNR BS4\n")
             for ms in self.mobile_stations:
                 file.write(f"{ms.name} \t \t")
                 for bs in self.base_stations:
                     file.write(f"{self.SNR_downlink[(ms, bs)]:.2f}\t \t")
+                file.write("\n")
+            file.write("--------------------------------\n\n")
+        if SNR_uplink:
+            file.write("SNR UPLINK\n")
+            file.write("MS name \tSNR BS1  \tSNR BS2  \tSNR BS3  \tSNR BS4\n")
+            for ms in self.mobile_stations:
+                file.write(f"{ms.name} \t \t")
+                for bs in self.base_stations:
+                    file.write(f"{self.SNR_uplink[(ms, bs)]:.2f}\t \t")
                 file.write("\n")
             file.write("--------------------------------\n\n")
         if CONN:
@@ -320,6 +449,23 @@ class Network:
             for ms in self.mobile_stations:
                 file.write(f"{ms.name} \t \t {self.SINR_downlink[ms]:.2f}\n")
             file.write("--------------------------------\n\n")
+        if D2D:
+            file.write("D2D PATH LOSSES\n")
+            file.write("MS1 name \tMS2 name \tPL\n")
+            for (ms1, ms2) in self.d2d_links:
+                file.write(f"{ms1.name} \t \t {ms2.name} \t \t{self.d2d_path_losses[(ms1, ms2)]:.2f}\n")
+            file.write("--------------------------------\n\n")
+            file.write("D2D RSS\n")
+            file.write("MS1 name \tMS2 name \tRSS\n")
+            for (ms1, ms2) in self.d2d_links:
+                file.write(f"{ms1.name} \t \t {ms2.name} \t \t{self.RSS_D2D[(ms1, ms2)]:.2f}\n")
+            file.write("--------------------------------\n\n")
+            file.write("D2D SNR\n")
+            file.write("MS1 name \tMS2 name \tSNR\n")
+            for (ms1, ms2) in self.d2d_links:
+                file.write(f"{ms1.name} \t \t {ms2.name} \t \t{self.SNR_D2D[(ms1, ms2)]:.2f}\n")
+            file.write("--------------------------------\n\n")
+        
         return
 
 
