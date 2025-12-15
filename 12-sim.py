@@ -50,6 +50,8 @@ network = Network(BS_list, MS_list, freq, BW_per_ms=BW_per_ms, d2d=True)
 # Output arrays
 capacity_CM = np.zeros(sim_steps)
 capacity_CM_DM = np.zeros(sim_steps)
+capacity_CM_opt = np.zeros(sim_steps)
+capacity_CM_DM_opt = np.zeros(sim_steps)
 capacity_CM_5G = np.zeros(sim_steps)
 capacity_CM_DM_5G = np.zeros(sim_steps)
 
@@ -72,10 +74,13 @@ network.update_RSS_D2D()
 
 # Initial capacities
 cap = network.capacity_D2D_shannon()
+cap_opt = network.capacity_D2D_shannon(optimize_BW=True)
 cap_5G = network.capacity_D2D_5G()
 
 capacity_CM[0] = cap[0]
 capacity_CM_DM[0] = cap[1]
+capacity_CM_opt[0] = cap_opt[0]
+capacity_CM_DM_opt[0] = cap_opt[1]
 capacity_CM_5G[0] = cap_5G[0]
 capacity_CM_DM_5G[0] = cap_5G[1]
 
@@ -106,9 +111,13 @@ for i in range(sim_steps):
     network.update_SNR_D2D()
     network.update_RSS_D2D()
 
-    cap = network.capacity_D2D_shannon()
+    cap = network.capacity_D2D_shannon(optimize_BW=False)
     capacity_CM[i] = cap[0]
     capacity_CM_DM[i] = cap[1]
+
+    cap_opt = network.capacity_D2D_shannon(optimize_BW=True)
+    capacity_CM_opt[i] = cap_opt[0]
+    capacity_CM_DM_opt[i] = cap_opt[1]
 
     cap_5G = network.capacity_D2D_5G()
     capacity_CM_5G[i] = cap_5G[0]
@@ -135,3 +144,15 @@ ax.set_ylabel("Channel capacity [Mbps]")
 ax.legend()
 ax.grid(visible=True, alpha=0.5)
 fig.savefig(out_folder + "12-sim.png", dpi=300)
+
+fig2, ax2 = plt.subplots(figsize=(8,6))
+ax2.plot(range(sim_steps), capacity_CM_DM_opt * 1e-6, label=f"Mode selection with optimized BW, Shannon", linewidth=0.8)
+ax2.plot(range(sim_steps), capacity_CM_DM * 1e-6, label=f"Mode selection, Shannon", linewidth=0.8)
+ax2.plot(range(sim_steps), capacity_CM_opt * 1e-6, label=f"Cellular mode with optimized BW, Shannon", linewidth=0.8)
+ax2.plot(range(sim_steps), capacity_CM * 1e-6, label=f"Cellular mode, Shannon", linewidth=0.8)
+
+ax2.set_xlabel("Simulation time [step]")
+ax2.set_ylabel("Channel capacity [Mbps]")
+ax2.legend()
+ax2.grid(visible=True, alpha=0.5)
+fig2.savefig(out_folder + "12-sim-bonus.png", dpi=300)

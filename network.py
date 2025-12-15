@@ -271,25 +271,36 @@ class Network:
 
         return capacity  # in bps
     
-    def capacity_D2D_shannon(self):
+    def capacity_D2D_shannon(self, optimize_BW = False):
         capacity_cell = 0
         capacity_mode_select = 0
         for i in range(len(self.mobile_stations)//2):
-            # Uplink
             ms_uplink = self.mobile_stations[i]
-            SNR_W = db_to_linear(self.SNR_uplink[(ms_uplink, self.connections[ms_uplink])])            
-            cap_uplink = (self.BW_per_ms / 2) * np.log2(1 + SNR_W)
-
-            # Downlink
             ms_downlink = self.mobile_stations[i + len(self.mobile_stations)//2]
-            SNR_W = db_to_linear(self.SNR_downlink[(ms_downlink, self.connections[ms_downlink])])
-            cap_downlink = (self.BW_per_ms / 2) * np.log2(1 + SNR_W)
+
+            SNR_W_uplink = db_to_linear(self.SNR_uplink[(ms_uplink, self.connections[ms_uplink])])
+            SNR_W_downlink = db_to_linear(self.SNR_downlink[(ms_downlink, self.connections[ms_downlink])])
+
+            BW_d2d = self.BW_per_ms
+            
+            if optimize_BW:          
+                BW_uplink = self.BW_per_ms / (1 + ( np.log2(1 + SNR_W_uplink) / np.log2(1 + SNR_W_downlink)))               
+                BW_downlink = self.BW_per_ms - BW_uplink                
+            else:
+                BW_uplink = self.BW_per_ms / 2
+                BW_downlink = self.BW_per_ms / 2                
+            
+            # Uplink                     
+            cap_uplink = BW_uplink * np.log2(1 + SNR_W_uplink)
+
+            # Downlink            
+            cap_downlink = BW_downlink * np.log2(1 + SNR_W_downlink)            
 
             cap_cell = min(cap_uplink, cap_downlink) # bottleneck
 
             # D2D
             SNR_W = db_to_linear(self.SNR_D2D[(ms_uplink, ms_downlink)])
-            cap_D2D = self.BW_per_ms * np.log2(1 + SNR_W)
+            cap_D2D = BW_d2d * np.log2(1 + SNR_W)
 
             capacity_cell += cap_cell
             capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode            
