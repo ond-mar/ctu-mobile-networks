@@ -15,7 +15,7 @@ Number_BS = 4 # Number of BS in the system level simulation
 
 freq = 2 # carrier frequency in GHz
 BW = 50e6  # channel bandwidth in Hz
-BW_per_ms = BW / (2* Number_MS)  # bandwidth per mobile station
+BW_per_ms = BW / Number_MS  # bandwidth per mobile station
 
 Pt_BS = 35  # transmission power of base station in dBm
 Pt_MS = 23  # transmission power of MS (in dBm)
@@ -132,6 +132,9 @@ os.makedirs(out_folder, exist_ok=True) # create folder if it does not exist
 
 with open(out_folder + "12-pl-rss-snr.txt", "w") as file:
     network.print_to_file(file, RSS_uplink=True, SNR_uplink=True, D2D=True)
+
+with open(out_folder + "12-debug.txt", "w") as file:
+    network.print_to_file(file, D2D=True)
 
 fig, ax = plt.subplots(figsize=(8,6))
 ax.plot(range(sim_steps), capacity_CM_DM * 1e-6, label=f"Mode selection, Shannon", linewidth=0.8)

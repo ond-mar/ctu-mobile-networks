@@ -67,6 +67,7 @@ for delta_H in Delta_H_values:
 
         # Create network to simulate with current deltaH and TTT
         network = Network(BS_list, MS_list, freq, BW)
+        network.find_flying_bs_for_ms(4, BS_height)
         # Set initial connections
         network.update_distances()
         network.update_path_losses()
@@ -111,4 +112,4 @@ ax.set_xlabel("Time to trigger [step]")
 ax.set_ylabel("Number of handovers [-]")
 ax.legend()
 ax.grid(visible=True, alpha=0.5)
-fig.savefig(out_folder + "10-sim-handovers-vs-TTT.png", dpi=300)
+fig.savefig(out_folder + "10-sim-handovers-vs-TTT-FBS.png", dpi=300)

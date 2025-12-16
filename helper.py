@@ -6,6 +6,11 @@ def node_distance(node1, node2):
     dz = node1.z - node2.z
     return (dx**2 + dy**2 + dz**2) ** 0.5
 
+def node_distance_xy(node1, node2):
+    dx = node1.x - node2.x
+    dy = node1.y - node2.y
+    return (dx**2 + dy**2) ** 0.5
+
 def path_loss(distance, frequency_GHz):       
     return (35.2 + 35 * np.log10(distance) + 26 * np.log10(frequency_GHz/2))
 

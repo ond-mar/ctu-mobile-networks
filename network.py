@@ -3,7 +3,7 @@ import numpy as np
 
 from mobile_station import MobileStation
 from base_station import BaseStation
-from helper import node_distance, path_loss, watt_to_dBm, dBm_to_watt, efficiency_5G, db_to_linear
+from helper import node_distance, node_distance_xy, path_loss, watt_to_dBm, dBm_to_watt, efficiency_5G, db_to_linear
 
 class Network:
     def __init__(self, base_stations = None, mobile_stations = None, carrier_frequency_GHz = 1, BW_Hz = 0, BW_per_ms = 0, d2d = False):
@@ -33,8 +33,9 @@ class Network:
         self.BW = {} # key = ms, value = BW
         self.REs_per_ms = {} # key = ms, value = REs/s
 
-        self.noise = self.BW_Hz / 4e21  # thermal noise in Watts
+        self.noise = 2 * self.BW_per_ms * 4e-21  # thermal noise in Watts
         self.noise_dBm = watt_to_dBm(self.noise) # thermal noise in dBm
+        print(f"Noise power: {self.noise_dBm:.2f} dBm over {self.BW_Hz/1e6:.2f} MHz")
 
         # Handover related data        
         self.HO_counters = {}  # key = ms, value = counter for TTT
@@ -45,7 +46,7 @@ class Network:
         # 5G capacity related data
         self.signaling_overhead = 0.25  # amount of signaling overhead (25%)
         self.total_REs = 7*12*100*20*275*(1-self.signaling_overhead)  # total amount of REs/s available for data transmission (i.e., exluding overhead)
-        self.REs_per_ms = self.total_REs / (2* len(self.mobile_stations))
+        self.REs_per_ms = self.total_REs / len(self.mobile_stations)
 
         self.d2d = d2d
         if d2d:
@@ -56,18 +57,19 @@ class Network:
             self.d2d_distances = {}
             self.d2d_path_losses = {}
 
+
             
 
 
     def update_distances(self):        
         for ms in self.mobile_stations:
             for bs in self.base_stations:
-                self.distances[(ms, bs)] = node_distance(ms, bs)
+                self.distances[(ms, bs)] = node_distance_xy(ms, bs)
         return self.distances
     
     def update_D2D_distances(self):
         for (ms1, ms2) in self.d2d_links:
-            self.d2d_distances[(ms1, ms2)] = node_distance(ms1, ms2)
+            self.d2d_distances[(ms1, ms2)] = node_distance_xy(ms1, ms2)
         return self.distances
     
     def update_path_losses(self):
@@ -237,17 +239,17 @@ class Network:
             efficiency_list = []
 
             for ms in self.mobile_stations:
-                if self.connections[ms] == bs:
+                if self.connections[ms] == bs: # for every MS connected to this BS
                     efficiency = efficiency_5G(self.SINR_downlink[ms])  # in bits/RE
                     if efficiency == 0: # no transmission possible
                         continue
 
                     efficiency_list.append(1/efficiency)
-                    connected_ms.append(ms)
+                    connected_ms.append(ms)                    
 
             efficiency_sum = np.sum(efficiency_list)
+            capacity_per_ms = (self.total_REs / efficiency_sum)           
 
-            capacity_per_ms = (self.total_REs / efficiency_sum) # / len(connected_ms)            
             capacity += capacity_per_ms * len(connected_ms)
 
         return capacity # in bps
@@ -281,14 +283,14 @@ class Network:
             SNR_W_uplink = db_to_linear(self.SNR_uplink[(ms_uplink, self.connections[ms_uplink])])
             SNR_W_downlink = db_to_linear(self.SNR_downlink[(ms_downlink, self.connections[ms_downlink])])
 
-            BW_d2d = self.BW_per_ms
+            BW_d2d = 2 * self.BW_per_ms
             
             if optimize_BW:          
-                BW_uplink = self.BW_per_ms / (1 + ( np.log2(1 + SNR_W_uplink) / np.log2(1 + SNR_W_downlink)))               
-                BW_downlink = self.BW_per_ms - BW_uplink                
+                BW_uplink = 2 * self.BW_per_ms / (1 + ( np.log2(1 + SNR_W_uplink) / np.log2(1 + SNR_W_downlink)))               
+                BW_downlink = 2 * self.BW_per_ms - BW_uplink                
             else:
-                BW_uplink = self.BW_per_ms / 2
-                BW_downlink = self.BW_per_ms / 2                
+                BW_uplink = self.BW_per_ms
+                BW_downlink = self.BW_per_ms                
             
             # Uplink                     
             cap_uplink = BW_uplink * np.log2(1 + SNR_W_uplink)
@@ -303,8 +305,8 @@ class Network:
             cap_D2D = BW_d2d * np.log2(1 + SNR_W)
 
             capacity_cell += cap_cell
-            capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode            
-
+            capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode  
+ 
         return (capacity_cell, capacity_mode_select)  # in bps
     
     def capacity_D2D_5G(self):
@@ -314,21 +316,23 @@ class Network:
             # Uplink
             ms_uplink = self.mobile_stations[i]
             efficiency_uplink = efficiency_5G(self.SNR_uplink[(ms_uplink, self.connections[ms_uplink])])  # in bits/RE
-            cap_uplink = (self.REs_per_ms / 2) * efficiency_uplink
+            cap_uplink = self.REs_per_ms * efficiency_uplink
 
             # Downlink
             ms_downlink = self.mobile_stations[i + len(self.mobile_stations)//2]
             efficiency_downlink = efficiency_5G(self.SNR_downlink[(ms_downlink, self.connections[ms_downlink])])  # in bits/RE
-            cap_downlink = (self.REs_per_ms / 2) * efficiency_downlink
+            cap_downlink = self.REs_per_ms * efficiency_downlink
 
-            cap_cell = min(cap_uplink, cap_downlink) # bottleneck
+            
+            cap_cell = min(cap_uplink, cap_downlink) # bottleneck       
 
             # D2D
             efficiency_D2D = efficiency_5G(self.SNR_D2D[(ms_uplink, ms_downlink)])  # in bits/RE
-            cap_D2D = self.REs_per_ms * efficiency_D2D
+            cap_D2D = 2 * self.REs_per_ms * efficiency_D2D # both BWs used for D2D
 
             capacity_cell += cap_cell
-            capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode           
+            capacity_mode_select += max(cap_D2D, cap_cell)  # D2D or cellular mode  
+
 
         return (capacity_cell, capacity_mode_select)  # in bps
     
@@ -401,7 +405,16 @@ class Network:
         self.base_stations = flying_BS_list  # Update network's base stations to flying BSs
         return flying_BS_list
     
-    def print_to_file(self, file, PL = False, RSS_downlink = False, RSS_uplink = False, SNR_downlink = False, SNR_uplink = False, CONN = False, SINR = False, D2D = False):        
+    def print_to_file(self, file, dist = False, PL = False, RSS_downlink = False, RSS_uplink = False, SNR_downlink = False, SNR_uplink = False, CONN = False, SINR = False, D2D = False):        
+        if dist:
+            file.write("DISTANCES\n")
+            file.write("MS name \tDistance BS1  \tDistance BS2  \tDistance BS3  \tDistance BS4\n")
+            for ms in self.mobile_stations:
+                file.write(f"{ms.name} \t \t")
+                for bs in self.base_stations:
+                    file.write(f"{self.distances[(ms, bs)]:.2f}\t \t")
+                file.write("\n")
+            file.write("--------------------------------\n\n")
         if PL:
             file.write("PATH LOSSES\n")
             file.write("MS name \tPL BS1  \tPL BS2  \tPL BS3  \tPL BS4\n")
@@ -461,6 +474,11 @@ class Network:
                 file.write(f"{ms.name} \t \t {self.SINR_downlink[ms]:.2f}\n")
             file.write("--------------------------------\n\n")
         if D2D:
+            file.write("D2D DISTANCES\n")
+            file.write("MS1 name \tMS2 name \tDistance\n")
+            for (ms1, ms2) in self.d2d_links:
+                file.write(f"{ms1.name} \t \t {ms2.name} \t \t{self.d2d_distances[(ms1, ms2)]:.2f}\n")
+            file.write("--------------------------------\n\n")
             file.write("D2D PATH LOSSES\n")
             file.write("MS1 name \tMS2 name \tPL\n")
             for (ms1, ms2) in self.d2d_links:
